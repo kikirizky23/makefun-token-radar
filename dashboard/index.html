@@ -3,14 +3,44 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Token Radar ranks pre-token protocols by implied value: TVL times the live-token market-cap multiple of their category, adjusted for growth, age and chains.">
-<title>Token Radar: the pre-token board, ranked by implied value</title>
+<title>Token Radar — pre-token protocols ranked by implied value</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<a class="skip" href="#board">Skip to the board</a>
-<main id="board" tabindex="-1" aria-busy="true">
-<noscript><p class="notice">Token Radar renders its board from the snapshot data beside this page, so it needs JavaScript switched on.</p></noscript>
+<main id="board">
+  <header class="masthead">
+    <div class="mark" aria-hidden="true">&#9678;</div>
+    <div>
+      <h1>Token radar: the pre-token board</h1>
+      <p class="lede">Every protocol that records no token, ranked by the value its token might carry at launch — if it priced like the live-token protocols in its own category.</p>
+    </div>
+  </header>
+
+  <section class="how" aria-label="How this board is built">
+    <h2>How this board is built</h2>
+    <p class="formula">implied value = TVL &times; category multiple &times; growth multiplier &times; maturity multiplier &times; chain multiplier</p>
+    <p>Peer rule: peers are protocols with a market cap above zero; each peer&rsquo;s ratio is market cap &divide; TVL, winsorized to [0.01, 1.50]. A category&rsquo;s multiple is the median peer ratio when the category has at least 3 peers, otherwise the global median of 0.2138.</p>
+    <p>&ldquo;Records no token&rdquo; means DefiLlama records neither a CoinGecko id nor a ticker for the protocol. Implied value is a model, not a promise: an estimate of what a token could be worth, not a price, a launch date, or a guarantee that a token ever appears.</p>
+    <p class="source">Data as of 2026-11-14, from DefiLlama. Model radar-3. Every number on this page is recomputed in the open — see app.js.</p>
+  </section>
+
+  <section class="stats" id="stats" aria-label="Coverage"></section>
+
+  <section class="filters" aria-label="Filters">
+    <label>Search <input id="q" type="search" placeholder="Name, category or chain" autocomplete="off"></label>
+    <label>Category <select id="category"><option value="">All categories</option></select></label>
+    <label>Chain <select id="chain"><option value="">All chains</option></select></label>
+    <div class="mode" role="group" aria-label="Token status">
+      <button id="mode-pre" class="on" type="button">Pre-token</button>
+      <button id="mode-live" type="button">Live token</button>
+    </div>
+  </section>
+
+  <p class="count" id="count"></p>
+
+  <div id="view"><noscript><p>This board needs JavaScript: its data and model live in local files that the page recomputes as it renders.</p></noscript></div>
+
+  <footer class="foot" id="foot"></footer>
 </main>
 <script src="../data.js"></script>
 <script src="app.js"></script>
