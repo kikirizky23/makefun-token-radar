@@ -1,127 +1,152 @@
-// main.ts — token-radar-01 v2 entrypoint (Node 22, standard library only).
-//
-// Reads the sealed snapshot, builds the radar-3 board with lib/model.ts,
-// and writes the entry's outputs:
-//   <out>/board.json    {"rows": [...]} — the ranked board
-//   <out>/data.js       window.RADAR = {...}; — the dashboard's data
-//   <out>/dashboard/    copied from this repository's dashboard/
-//   <out>/screenshots/  copied from this repository's screenshots/
-//   <out>/dossier.json  buildDossier from vendor/makefun-board.ts
-//
-// Usage:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input <snapshot>
-//   --input takes a snapshot.json file or a directory holding snapshot.json
-//   (default /input/snapshot.json); --output or MAKEFUN_OUTPUT_DIR picks the
-//   output directory (default /output).
-//
-// The run is deterministic: no clock, no randomness, no network. Two runs
-// over the same snapshot write byte-identical board.json and data.js.
+// radar-4 entry point: snapshot in, board.json + data.js + dossier.json out.
+// Node 22+, standard library only. Fully deterministic: no clock, no random,
+// no network. Run: node main.ts --input <snapshot.json> --output <dir>
 
-import {
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  readdirSync,
-  cpSync,
-} from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { parseSnapshot, buildRadar, boardIssue, dataScript } from './lib/model.ts';
-import { buildDossier } from './vendor/makefun-board.ts';
+import { readFileSync, writeFileSync, mkdirSync, cpSync, readdirSync, statSync } from "node:fs";
+import { join, dirname, basename } from "node:path";
+import { fileURLToPath } from "node:url";
+import { boardIssue, buildRadar, toBoard } from "./lib/model.ts";
+import type { Snapshot } from "./lib/model.ts";
+import { buildDossier } from "./vendor/makefun-board.ts";
 
-const REPO_DIR = dirname(fileURLToPath(import.meta.url));
+// --- CLI -------------------------------------------------------------------
 
-const SCREENSHOT_NAME = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/;
+interface Cli {
+  input: string;
+  output: string;
+}
 
-function parseArgs(argv: string[]): { input: string; output: string } {
-  let input = '/input/snapshot.json';
-  let output = process.env.MAKEFUN_OUTPUT_DIR || '/output';
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--input' && i + 1 < argv.length) input = argv[++i];
-    else if (argv[i] === '--output' && i + 1 < argv.length) output = argv[++i];
-    else if (argv[i].startsWith('--input=')) input = argv[i].slice('--input='.length);
-    else if (argv[i].startsWith('--output=')) output = argv[i].slice('--output='.length);
+function parseArgs(argv: string[]): Cli {
+  let input = "/input/snapshot.json";
+  let output = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--input" && i + 1 < argv.length) {
+      input = argv[i + 1];
+      i += 1;
+    } else if (arg.startsWith("--input=")) {
+      input = arg.slice("--input=".length);
+    } else if (arg === "--output" && i + 1 < argv.length) {
+      output = argv[i + 1];
+      i += 1;
+    } else if (arg.startsWith("--output=")) {
+      output = arg.slice("--output=".length);
+    } else {
+      throw new Error(`unknown argument: ${arg}`);
+    }
   }
   return { input, output };
 }
 
-/** A .json argument is used directly; a directory argument gains snapshot.json. */
-function resolveInput(inputArg: string): string {
-  if (inputArg.endsWith('.json')) return inputArg;
-  return join(inputArg, 'snapshot.json');
+function fail(message: string): never {
+  console.error(`radar-4: ${message}`);
+  process.exit(1);
 }
 
-/** Recursively copy a directory, skipping names that start with a dot. */
-function copyTree(source: string, dest: string): void {
-  mkdirSync(dest, { recursive: true });
-  for (const entry of readdirSync(source, { withFileTypes: true })) {
-    if (entry.name.startsWith('.')) continue;
-    const from = join(source, entry.name);
-    const to = join(dest, entry.name);
-    if (entry.isDirectory()) copyTree(from, to);
-    else if (entry.isFile()) cpSync(from, to);
+// --- Screenshots ------------------------------------------------------------
+// A screenshot name is a plain file name with an image extension: no paths,
+// no hidden files, no funny characters. The first screenshot is the cover.
+
+const SCREENSHOT_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(png|jpg|jpeg|webp)$/i;
+
+function checkScreenshots(outputDir: string): string[] {
+  const dir = join(outputDir, "screenshots");
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    fail("screenshots/ directory is missing from the output");
   }
+  const files: string[] = [];
+  for (const entry of entries!) {
+    const full = join(dir, entry);
+    let st;
+    try {
+      st = statSync(full);
+    } catch {
+      fail(`cannot stat screenshot ${entry}`);
+    }
+    if (!st!.isFile()) fail(`screenshot entry ${entry} is not a file`);
+    if (!SCREENSHOT_NAME_RE.test(entry)) {
+      fail(`invalid screenshot name: ${entry}`);
+    }
+    files.push(entry);
+  }
+  files.sort();
+  if (files.length < 3) {
+    fail(`only ${files.length} screenshot(s), expected at least 3`);
+  }
+  return files;
 }
 
-function main(): void {
-  const { input, output } = parseArgs(process.argv.slice(2));
-  const snapshot = parseSnapshot(readFileSync(resolveInput(input), 'utf8'));
-  const radar = buildRadar(snapshot);
+// --- Main --------------------------------------------------------------------
 
-  const boardRows = radar.rows.map((row) => ({
-    slug: row.slug,
-    name: row.name,
-    rank: row.rank,
-    implied_value_usd: row.impliedValueUsd,
-    farm_steps: row.farmSteps,
-    category: row.category,
-    tvl_usd: row.tvlUsd,
-    change_7d: row.change7d,
-    age_days: row.ageDays,
-    watchlist: row.watchlist,
-    multiples: row.multiples,
-  }));
+async function main(): Promise<void> {
+  const cli = parseArgs(process.argv.slice(2));
 
-  const issue = boardIssue(boardRows, snapshot);
-  if (issue) {
-    console.error(`board issue: ${issue}`);
-    process.exit(1);
+  let raw: string;
+  try {
+    raw = readFileSync(cli.input, "utf8");
+  } catch (error) {
+    fail(`cannot read snapshot ${cli.input}: ${(error as Error).message}`);
   }
 
-  mkdirSync(output, { recursive: true });
-  writeFileSync(join(output, 'board.json'), `${JSON.stringify({ rows: boardRows }, null, 2)}\n`);
-  writeFileSync(join(output, 'data.js'), dataScript(radar));
-  copyTree(join(REPO_DIR, 'dashboard'), join(output, 'dashboard'));
-  copyTree(join(REPO_DIR, 'screenshots'), join(output, 'screenshots'));
-
-  const shotDir = join(output, 'screenshots');
-  const shots = readdirSync(shotDir).filter((name) => !name.startsWith('.'));
-  const badShots = shots.filter((name) => !SCREENSHOT_NAME.test(name));
-  if (badShots.length > 0) {
-    console.error(`screenshots: invalid file name(s): ${badShots.join(', ')}`);
-    process.exit(1);
-  }
-  if (shots.length < 3) {
-    console.error(
-      `screenshots: only ${shots.length} screenshot(s) in ${shotDir}, need at least 3`,
-    );
-    process.exit(1);
+  let snapshot: Snapshot;
+  try {
+    snapshot = JSON.parse(raw!) as Snapshot;
+  } catch (error) {
+    fail(`snapshot ${cli.input} is not valid JSON: ${(error as Error).message}`);
   }
 
-  const dossier = buildDossier(output, {
+  const radar = buildRadar(snapshot!);
+  const board = toBoard(radar);
+
+  const issue = boardIssue(board, snapshot!);
+  if (issue !== null) fail(`board validation failed: ${issue}`);
+
+  mkdirSync(cli.output, { recursive: true });
+
+  // Board files first: even when the screenshot check below fails, these
+  // two files are already written for inspection.
+  writeFileSync(join(cli.output, "board.json"), `${JSON.stringify(board, null, 2)}\n`, "utf8");
+  writeFileSync(join(cli.output, "data.js"), `window.RADAR = ${JSON.stringify(radar, null, 2)};\n`, "utf8");
+
+  // Dashboard page and screenshots ship from this repo into the output.
+  const repoDir = dirname(fileURLToPath(import.meta.url));
+  for (const sub of ["dashboard", "screenshots"]) {
+    const src = join(repoDir, sub);
+    const dest = join(cli.output, sub);
+    try {
+      cpSync(src, dest, { recursive: true });
+    } catch {
+      // A missing source directory is treated as an empty one.
+      mkdirSync(dest, { recursive: true });
+    }
+  }
+
+  const shots = checkScreenshots(cli.output);
+  console.error(`radar-4: ${radar.rows.length} rows, ${shots.length} screenshots (${shots.join(", ")})`);
+
+  // Dossier: the vendor builder reads board.json, dashboard/ and
+  // screenshots/ from the output directory and returns the bundle bytes.
+  // Write them exactly as returned.
+  const dossier = (await buildDossier(cli.output, {
     text_max_bytes: 65536,
     screenshots: { max: 4, max_bytes: 524288 },
     dashboard: { max_files: 400, max_bytes: 4194304 },
-  });
-  writeFileSync(join(output, 'dossier.json'), dossier);
+  })) as unknown;
+  const dossierPath = join(cli.output, "dossier.json");
+  if (typeof dossier === "string") {
+    writeFileSync(dossierPath, dossier, "utf8");
+  } else if (dossier instanceof Uint8Array) {
+    writeFileSync(dossierPath, dossier);
+  } else {
+    fail(`buildDossier returned an unexpected value of type ${typeof dossier}`);
+  }
 
-  const watchlistRows = radar.rows.filter((row) => row.watchlist).length;
-  const earlyRows = radar.rows.length - watchlistRows;
-  console.log(
-    `radar-3: ${snapshot.protocols.length} protocols, ` +
-      `${watchlistRows} watchlist + ${earlyRows} early = ${radar.rows.length} board rows, ` +
-      `globalMultiple ${radar.meta.globalMultiple} -> ${output}`,
-  );
+  console.error(`radar-4: wrote board.json, data.js and dossier.json to ${cli.output}`);
 }
 
-main();
+main().catch((error: unknown) => {
+  fail(`unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+});
