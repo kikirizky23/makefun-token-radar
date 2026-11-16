@@ -1,47 +1,92 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token Radar — pre-token protocols ranked by implied value</title>
+<title>Token Radar — radar-4 · Pre-token protocols, ranked</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<main id="board">
-  <header class="masthead">
-    <div class="mark" aria-hidden="true">&#9678;</div>
-    <div>
-      <h1>Token radar: the pre-token board</h1>
-      <p class="lede">Every protocol that records no token, ranked by the value its token might carry at launch — if it priced like the live-token protocols in its own category.</p>
-    </div>
-  </header>
+<header class="masthead">
+  <div class="mark" aria-hidden="true">R4</div>
+  <div class="masthead-text">
+    <h1>Token Radar <span class="model">radar-4</span></h1>
+    <p class="tagline">Pre-token protocols, ranked by implied value · snapshot 2026-11-14</p>
+  </div>
+  <div class="masthead-side">
+    <span id="recompute-badge" class="pill">recomputing…</span>
+    <a class="back-link hidden" id="back-link" href="#/">← Board</a>
+  </div>
+</header>
 
-  <section class="how" aria-label="How this board is built">
-    <h2>How this board is built</h2>
-    <p class="formula">implied value = TVL &times; category multiple &times; growth multiplier &times; maturity multiplier &times; chain multiplier</p>
-    <p>Peer rule: peers are protocols with a market cap above zero; each peer&rsquo;s ratio is market cap &divide; TVL, winsorized to [0.01, 1.50]. A category&rsquo;s multiple is the median peer ratio when the category has at least 3 peers, otherwise the global median of 0.2138.</p>
-    <p>&ldquo;Records no token&rdquo; means DefiLlama records neither a CoinGecko id nor a ticker for the protocol. Implied value is a model, not a promise: an estimate of what a token could be worth, not a price, a launch date, or a guarantee that a token ever appears.</p>
-    <p class="source">Data as of 2026-11-14, from DefiLlama. Model radar-3. Every number on this page is recomputed in the open — see app.js.</p>
+<div class="statstrip" id="statstrip" aria-label="Board summary">
+  <span><b>Watchlist 40/40</b></span>
+  <span>Rows <b>198</b></span>
+  <span>Pre-token <b>342</b></span>
+  <span>Peer median <b>×0.1691</b></span>
+  <span class="top-note">Top: <b>Steakhouse Financial · $1.139B</b></span>
+</div>
+
+<main>
+  <noscript><p class="noscript-note">This board is rendered by local JavaScript from the data file next to it — please enable JavaScript to view the 198 ranked protocols.</p></noscript>
+  <section id="board-view">
+    <div class="filters" role="search">
+      <input id="f-search" type="search" placeholder="Search name or category…" aria-label="Search protocols">
+      <select id="f-category" aria-label="Filter by category"><option value="">All categories</option></select>
+      <select id="f-chain" aria-label="Filter by chain"><option value="">All chains</option></select>
+      <button id="f-watchlist" class="toggle" aria-pressed="false" type="button">Watchlist</button>
+      <button id="f-early" class="toggle" aria-pressed="false" type="button">Early &lt;1y</button>
+      <button id="f-productline" class="toggle" aria-pressed="false" type="button">Product line</button>
+    </div>
+    <p class="count" id="row-count">198 of 198 rows shown</p>
+    <div class="table-wrap">
+      <table id="board">
+        <thead>
+          <tr>
+            <th data-sort="rank" class="num">Rank <span class="arrow"></span></th>
+            <th data-sort="name">Name <span class="arrow"></span></th>
+            <th data-sort="tvl_usd" class="num">TVL <span class="arrow"></span></th>
+            <th data-sort="change_7d" class="num">7d <span class="arrow"></span></th>
+            <th data-sort="age_days" class="num">Age <span class="arrow"></span></th>
+            <th data-sort="multiple" class="num">Multiple <span class="arrow"></span></th>
+            <th data-sort="implied_value_usd" class="num">Implied value <span class="arrow"></span></th>
+            <th>Farm</th>
+          </tr>
+        </thead>
+        <tbody id="board-body"></tbody>
+      </table>
+    </div>
+    <p class="footnote">7d “—” means no 7-day change was reported; those rows always sort last. Implied value is recomputed on this page from TVL × multiples — see the badge above.</p>
+
+    <details class="method" id="method">
+      <summary>How this board is built — formula, peers, product-line rule</summary>
+      <div class="method-body">
+        <h2>The formula</h2>
+        <p class="formula">implied_value_usd = round(tvl_usd × categoryMultiple × growth × maturity × productLine)</p>
+        <ul class="rules">
+          <li><b>Category multiple</b> — peer median per category, shrunk toward the global median: <span class="mono">(n · median_category + 3 · globalMultiple) / (n + 3)</span>. Categories with no tokenized peers use the global median ×0.1691.</li>
+          <li><b>Growth</b> — <span class="mono">1 + 0.5 · clamp(change_7d, −60, 120) / 100</span> (no 7d data → 1.0; range 0.7–1.6).</li>
+          <li><b>Maturity</b> — <span class="mono">0.65 + 0.35 · (1 − exp(−age_days / 730))</span>; older protocols score closer to 1.0.</li>
+          <li><b>Product line</b> — ×0.5 when the row is only one product line of a larger protocol (last word of the name in {curator, prime, exchange, gateway, perps, spot, vaults, strategies, management}, or a stablecoin-product name such as thUSD/avUSD or USDCx). Only part of the protocol TVL belongs to that line, so valuing the whole TVL as the product's own would overstate it.</li>
+          <li><b>Peers</b> — 143 protocols that already have a token: peer ratio = min(mcap_usd / tvl_usd, 1.5); mcap_usd = 0 counts as ratio 0. Global multiple = median of all peer ratios.</li>
+        </ul>
+        <h2>Top-12 category multiples</h2>
+        <table class="mini" id="cat-table">
+          <thead><tr><th>Category</th><th class="num">Peers</th><th class="num">Median</th><th class="num">Multiple</th><th>Note</th></tr></thead>
+          <tbody id="cat-body"></tbody>
+        </table>
+        <p class="footnote">11 categories have no tokenized peers and fall back to the global multiple ×0.1691: Anchor BTC, CDP Manager, CeDeFi, Collateral Markets, Crypto Card Issuer, Decentralized BTC, Insurance, Interest Rate Derivatives, OTC Marketplace, Stablecoin Wrapper, Uncollateralized Lending.</p>
+      </div>
+    </details>
   </section>
 
-  <section class="stats" id="stats" aria-label="Coverage"></section>
-
-  <section class="filters" aria-label="Filters">
-    <label>Search <input id="q" type="search" placeholder="Name, category or chain" autocomplete="off"></label>
-    <label>Category <select id="category"><option value="">All categories</option></select></label>
-    <label>Chain <select id="chain"><option value="">All chains</option></select></label>
-    <div class="mode" role="group" aria-label="Token status">
-      <button id="mode-pre" class="on" type="button">Pre-token</button>
-      <button id="mode-live" type="button">Live token</button>
-    </div>
-  </section>
-
-  <p class="count" id="count"></p>
-
-  <div id="view"><noscript><p>This board needs JavaScript: its data and model live in local files that the page recomputes as it renders.</p></noscript></div>
-
-  <footer class="foot" id="foot"></footer>
+  <section id="detail-view" class="hidden" aria-live="polite"></section>
 </main>
+
+<footer>
+  <p>Token Radar · model <b>radar-4</b> · data as of 2026-11-14 · 198 pre-token protocols · offline file — no network requests.</p>
+</footer>
+
 <script src="../data.js"></script>
 <script src="app.js"></script>
 </body>
